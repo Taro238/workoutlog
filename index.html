@@ -69,18 +69,14 @@
     let tempExercises = [];
     let currentLogs = [];
 
-    // --- 種目追加機能（安全版） ---
+    // 種目追加
     function addExerciseToList() {
-        try {
-            const name = document.getElementById('exercise-select').value;
-            const weight = document.getElementById('weight-input').value;
-            if(!weight) return;
-            tempExercises.push({ name, weight });
-            renderTempList();
-            document.getElementById('weight-input').value = '';
-        } catch (e) {
-            console.error("追加エラー:", e);
-        }
+        const name = document.getElementById('exercise-select').value;
+        const weight = document.getElementById('weight-input').value;
+        if(!weight) return;
+        tempExercises.push({ name, weight });
+        renderTempList();
+        document.getElementById('weight-input').value = '';
     }
 
     function renderTempList() {
@@ -88,7 +84,7 @@
         listEl.innerHTML = tempExercises.map((ex, i) => `<li>${ex.name}: ${ex.weight}kg <span onclick="tempExercises.splice(${i},1);renderTempList();" style="color:red;cursor:pointer">×</span></li>`).join('');
     }
 
-    // --- データ保存機能 ---
+    // 保存機能
     async function saveDayLog() {
         const user = document.getElementById('user-name').value;
         const date = document.getElementById('work-date').value;
@@ -96,7 +92,6 @@
         const editRowIndex = document.getElementById('edit-index').value;
 
         if (!user || tempExercises.length === 0) return alert("入力不足です");
-
         const msgEl = document.getElementById('status-msg');
         msgEl.style.display = 'block';
 
@@ -111,7 +106,7 @@
             alert(editRowIndex ? "修正しました" : "保存しました");
             resetForm();
             displayHistory();
-        } catch (e) { alert("保存に失敗しました。URLやGASの設定を確認してください。"); }
+        } catch (e) { alert("エラーが発生しました"); }
         finally { msgEl.style.display = 'none'; }
     }
 
@@ -124,9 +119,109 @@
         document.getElementById('day-memo').value = "";
     }
 
-    // --- エルゴ解析機能 ---
+    // エルゴ解析
     async function processErgoImage(input) {
         if (!input.files || !input.files[0]) return;
         const file = input.files[0];
         const statusEl = document.getElementById('ocr-status');
-        statusEl.style.display = 'block
+        statusEl.style.display = 'block';
+        statusEl.innerText = "解析中...";
+
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const base64 = e.target.result.split(',')[1];
+            try {
+                const response = await fetch(API_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ method: 'OCR_UPLOAD', image: base64, mimeType: file.type })
+                });
+                const result = await response.json();
+                if (result.time || result.distance) {
+                    tempExercises.push({ name: `エルゴ ${result.distance}m (${result.time})`, weight: result.split || "---" });
+                    renderTempList();
+                } else { alert("解析失敗"); }
+            } catch (err) { alert("通信エラー"); }
+            finally { statusEl.style.display = 'none'; }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // 履歴表示
+    async function displayHistory() {
+        const container = document.getElementById('history-summary');
+        try {
+            const response = await fetch(API_URL);
+            const rawData = await response.json();
+            currentLogs = rawData.map(log => {
+                try {
+                    const parsed = (typeof log.exercises === 'string') ? JSON.parse(log.exercises) : log.exercises;
+                    return { ...log, exercises: parsed || [] };
+                } catch (e) { return null; }
+            }).filter(l => l !== null);
+            renderHistoryList(currentLogs); 
+        } catch (e) { container.innerHTML = "読み込み失敗"; }
+    }
+
+    function filterHistory() {
+        const query = document.getElementById('search-input').value.toLowerCase();
+        const filtered = currentLogs.filter(log => {
+            const dateStr = new Date(log.date).toLocaleDateString('ja-JP');
+            return dateStr.includes(query) || log.user.toLowerCase().includes(query);
+        });
+        renderHistoryList(filtered);
+    }
+
+    function renderHistoryList(logs) {
+        const container = document.getElementById('history-summary');
+        const logsForDisplay = [...logs].reverse();
+        if (logsForDisplay.length === 0) {
+            container.innerHTML = "記録なし";
+            return;
+        }
+        container.innerHTML = logsForDisplay.map((log) => {
+            return `
+                <div class="history-item" onclick="toggleDetail(${log.rowIndex})">
+                    <strong>📅 ${new Date(log.date).toLocaleDateString('ja-JP')}</strong> - 👤 ${log.user}
+                </div>
+                <div id="detail-${log.rowIndex}" class="detail-box">
+                    <ul>${log.exercises.map(ex => `<li>${ex.name}: ${ex.weight}kg</li>`).join('')}</ul>
+                    <p>メモ: ${log.memo || 'なし'}</p>
+                    <div class="btn-group">
+                        <button class="btn-edit" onclick="editLog(${currentLogs.findIndex(item => item.rowIndex === log.rowIndex)})">修正</button>
+                        <button class="btn-del" onclick="deleteLog(${log.rowIndex})">削除</button>
+                    </div>
+                </div>
+            `}).join('');
+    }
+
+    async function deleteLog(rowIndex) {
+        if (!confirm("削除しますか？")) return;
+        try {
+            await fetch(API_URL, { method: "POST", body: JSON.stringify({ method: 'DELETE', rowIndex: rowIndex }) });
+            displayHistory();
+        } catch (e) { alert("失敗"); }
+    }
+
+    function editLog(index) {
+        const log = currentLogs[index];
+        document.getElementById('user-name').value = log.user;
+        document.getElementById('work-date').value = (typeof log.date === 'string') ? log.date.split('T')[0] : "";
+        document.getElementById('day-memo').value = log.memo;
+        document.getElementById('edit-index').value = log.rowIndex;
+        tempExercises = [...log.exercises];
+        renderTempList();
+        document.getElementById('form-title').innerText = "📝 修正中";
+        window.scrollTo(0, 0);
+    }
+
+    function toggleDetail(id) {
+        document.querySelectorAll('.detail-box').forEach(el => {
+            if(el.id === `detail-${id}`) el.classList.toggle('active-detail');
+            else el.classList.remove('active-detail');
+        });
+    }
+
+    window.onload = displayHistory;
+</script>
+</body>
+</html>
