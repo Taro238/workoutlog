@@ -1,335 +1,73 @@
 <!DOCTYPE html>
-
 <html lang="ja">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>クラウド筋トレ日報 Pro</title>
-
     <style>
-
         body { font-family: sans-serif; background: #f0f2f5; padding: 20px; color: #333; }
-
         .container { max-width: 600px; margin: 0 auto; }
-
         .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-
         input, select, textarea { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-
         .exercise-input-group { background: #eef2f7; padding: 15px; border-radius: 8px; margin-top: 10px; }
-
         .btn-save { background: #1a73e8; color: white; border: none; padding: 15px; border-radius: 8px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 20px; }
-
         .history-item { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 5px solid #1a73e8; cursor: pointer; position: relative; }
-
         .detail-box { display: none; background: #fff; border: 2px solid #1a73e8; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-
         .active-detail { display: block; }
-
         .btn-group { display: flex; gap: 10px; margin-top: 15px; }
-
         .btn-del { background: #ea4335; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; flex: 1; }
-
         .btn-edit { background: #fbbc05; color: black; border: none; padding: 8px; border-radius: 4px; cursor: pointer; flex: 1; }
-
         .loading { text-align: center; display: none; font-weight: bold; color: #1a73e8; }
-
     </style>
-
 </head>
-
 <body>
 
-
-
 <div class="container">
-
     <h1 id="form-title">☁️ 記録を入力</h1>
 
-
-
     <div class="card">
-
         <input type="hidden" id="edit-index" value="">
-
         <label>名前</label><input type="text" id="user-name">
-
         <label>日付</label><input type="date" id="work-date">
-
+        
         <div class="exercise-input-group">
-
             <select id="exercise-select">
-
                 <option value="スクワット">スクワット</option>
-
                 <option value="ベンチプレス">ベンチプレス</option>
-
                 <option value="デッドリフト">デッドリフト</option>
-
             </select>
-
             <input type="number" id="weight-input" placeholder="kg">
-
             <button type="button" onclick="addExerciseToList()">＋ 追加</button>
-
             <ul id="temp-exercise-list"></ul>
-
         </div>
 
-        <textarea id="day-memo" placeholder="メモ"></textarea>
+        <div class="card" style="border: 2px dashed #34a853; margin-top: 15px; padding: 15px; background: #fafffa;">
+            <label style="color:#34a853; font-weight:bold;">🚣 エルゴ記録（写真解析）</label>
+            <input type="file" id="camera-input" accept="image/*" capture="camera" style="display:none;" onchange="processErgoImage(this)">
+            <button type="button" onclick="document.getElementById('camera-input').click()" style="background:#34a853; color:white; border:none; padding:10px; border-radius:8px; width:100%; cursor:pointer; margin-top:10px; font-weight:bold;">📸 写真を撮って自動解析</button>
+            <p id="ocr-status" style="font-size:12px; color:#666; margin-top:5px; display:none; text-align:center;">解析中...（10秒ほど待機）</p>
+        </div>
 
+        <textarea id="day-memo" placeholder="メモ" style="margin-top: 15px;"></textarea>
         <button id="save-btn" class="btn-save" onclick="saveDayLog()">記録を保存（同期）</button>
-
         <p id="status-msg" class="loading">通信中...</p>
-
     </div>
-
-
 
     <div class="history-section">
-
         <h2>過去の記録</h2>
-
+        <div class="card" style="margin-bottom: 10px; padding: 10px;">
+            <input type="text" id="search-input" placeholder="名前や日付で検索..." oninput="filterHistory()">
+        </div>
         <div id="history-summary">読み込み中...</div>
-
     </div>
-
 </div>
 
-
-
 <script>
-
-    const API_URL = "https://script.google.com/macros/s/AKfycbxnGZH6oxQEeGjuJGpzzvbF0xILgJQ-wZvtV49zXANDGSujMEF6jiNI_z1PyZENd2Pc/exec";
-
+    const API_URL = "https://script.google.com/macros/s/AKfycbwmRx7V_E8awGMk2sFXub-UtSernPQiLZrPA9aShbfpJzjU-i7gifdXooHVe64NsEdk/exec";
+    
     document.getElementById('work-date').valueAsDate = new Date();
-
     let tempExercises = [];
-
     let currentLogs = [];
 
-
-
     function addExerciseToList() {
-
-        const name = document.getElementById('exercise-select').value;
-
-        const weight = document.getElementById('weight-input').value;
-
-        if(!weight) return;
-
-        tempExercises.push({ name, weight });
-
-        renderTempList();
-
-        document.getElementById('weight-input').value = '';
-
-    }
-
-
-
-    function renderTempList() {
-
-        const listEl = document.getElementById('temp-exercise-list');
-
-        listEl.innerHTML = tempExercises.map((ex, i) => `<li>${ex.name}: ${ex.weight}kg <span onclick="tempExercises.splice(${i},1);renderTempList();" style="color:red;cursor:pointer">×</span></li>`).join('');
-
-    }
-
-
-
-    async function saveDayLog() {
-
-        const user = document.getElementById('user-name').value;
-
-        const date = document.getElementById('work-date').value;
-
-        const memo = document.getElementById('day-memo').value;
-
-        const editRowIndex = document.getElementById('edit-index').value;
-
-
-
-        if (!user || tempExercises.length === 0) return alert("入力不足です");
-
-
-
-        const msgEl = document.getElementById('status-msg');
-
-        msgEl.style.display = 'block';
-
-
-
-        const data = { 
-
-            user, date, exercises: tempExercises, memo,
-
-            method: editRowIndex ? 'PUT' : 'POST',
-
-            rowIndex: editRowIndex ? parseInt(editRowIndex) : null
-
-        };
-
-
-
-        try {
-
-            await fetch(API_URL, { method: "POST", body: JSON.stringify(data) });
-
-            alert(editRowIndex ? "修正しました" : "保存しました");
-
-            resetForm();
-
-            displayHistory();
-
-        } catch (e) { alert("エラーが発生しました"); }
-
-        finally { msgEl.style.display = 'none'; }
-
-    }
-
-
-
-    function resetForm() {
-
-        document.getElementById('edit-index').value = "";
-
-        document.getElementById('form-title').innerText = "☁️ 記録を入力";
-
-        document.getElementById('save-btn').innerText = "記録を保存（同期）";
-
-        tempExercises = [];
-
-        renderTempList();
-
-        document.getElementById('day-memo').value = "";
-
-    }
-
-
-
-    async function displayHistory() {
-
-        const container = document.getElementById('history-summary');
-
-        try {
-
-            const response = await fetch(API_URL);
-
-            currentLogs = await response.json();
-
-            const logsForDisplay = [...currentLogs].reverse();
-
-
-
-            container.innerHTML = logsForDisplay.map((log) => {
-
-                // reverseしているので元のindexを探す
-
-                const originalIndex = currentLogs.findIndex(item => item.rowIndex === log.rowIndex);
-
-                return `
-
-                <div class="history-item" onclick="toggleDetail(${log.rowIndex})">
-
-                   <strong>📅 ${new Date(log.date).toLocaleDateString('ja-JP')}</strong> - 👤 ${log.user}
-
-                </div>
-
-                <div id="detail-${log.rowIndex}" class="detail-box">
-
-                    <ul>${log.exercises.map(ex => `<li>${ex.name}: ${ex.weight}kg</li>`).join('')}</ul>
-
-                    <p>メモ: ${log.memo || 'なし'}</p>
-
-                    <div class="btn-group">
-
-                        <button class="btn-edit" onclick="editLog(${originalIndex})">修正する</button>
-
-                        <button class="btn-del" onclick="deleteLog(${log.rowIndex})">削除する</button>
-
-                    </div>
-
-                </div>
-
-            `}).join('');
-
-        } catch (e) { container.innerHTML = "読み込み失敗"; }
-
-    }
-
-
-
-    async function deleteLog(rowIndex) {
-
-        if (!confirm("この日の記録を削除しますか？")) return;
-
-        document.getElementById('status-msg').style.display = 'block';
-
-        try {
-
-            await fetch(API_URL, { method: "POST", body: JSON.stringify({ method: 'DELETE', rowIndex: rowIndex }) });
-
-            displayHistory();
-
-        } catch (e) { alert("失敗しました"); }
-
-        finally { document.getElementById('status-msg').style.display = 'none'; }
-
-    }
-
-
-
-    function editLog(index) {
-
-        const log = currentLogs[index];
-
-        document.getElementById('user-name').value = log.user;
-
-        document.getElementById('work-date').value = log.date.split('T')[0];
-
-        document.getElementById('day-memo').value = log.memo;
-
-        document.getElementById('edit-index').value = log.rowIndex;
-
-        tempExercises = [...log.exercises];
-
-        renderTempList();
-
-        
-
-        document.getElementById('form-title').innerText = "📝 記録を修正中";
-
-        document.getElementById('save-btn').innerText = "修正内容を保存する";
-
-        window.scrollTo(0, 0);
-
-    }
-
-
-
-    function toggleDetail(id) {
-
-        document.querySelectorAll('.detail-box').forEach(el => {
-
-            if(el.id === `detail-${id}`) el.classList.toggle('active-detail');
-
-            else el.classList.remove('active-detail');
-
-        });
-
-    }
-
-
-
-    window.onload = displayHistory;
-
-</script>
-
-</body>
-
-</html>
+        const name = document.
