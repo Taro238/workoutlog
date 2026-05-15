@@ -134,7 +134,18 @@
                 });
                 const result = await response.json();
                 if (result.time || result.distance) {
-                    tempExercises.push({ name: `エルゴ ${result.distance}m (${result.time})`, weight: result.split || "---" });
+                    // 種目リストに合計データを追加
+                    tempExercises.push({ 
+                        name: `エルゴ ${result.distance}m (${result.time})`, 
+                        weight: result.split || "---" 
+                    });
+                    
+                    // ラップ詳細がある場合はメモ欄に追記
+                    if (result.memo) {
+                        const memoEl = document.getElementById('day-memo');
+                        memoEl.value = (memoEl.value ? memoEl.value + "\n" : "") + result.memo;
+                    }
+                    
                     renderTempList();
                 } else { alert("解析失敗"); }
             } catch (err) { alert("通信エラー"); }
