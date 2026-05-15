@@ -236,7 +236,7 @@
 
                 <div class="history-item" onclick="toggleDetail(${log.rowIndex})">
 
-                    <strong>📅 ${log.date.split('T')[0]}</strong> - 👤 ${log.user}
+                   <strong>📅 ${new Date(log.date).toLocaleDateString('ja-JP')}</strong> - 👤 ${log.user}
 
                 </div>
 
