@@ -46,6 +46,13 @@
 
     <div class="history-section">
         <h2>過去の記録</h2>
+<div class="history-section">
+    <h2>過去の記録</h2>
+    <div class="card" style="margin-bottom: 10px; padding: 10px;">
+        <input type="text" id="search-input" placeholder="名前や日付で検索..." oninput="filterHistory()">
+    </div>
+    <div id="history-summary">読み込み中...</div>
+</div>
         <div id="history-summary">読み込み中...</div>
     </div>
 </div>
@@ -105,17 +112,99 @@
         document.getElementById('day-memo').value = "";
     }
 
+    <script>
+    // ★ここはご自身のURLのままにしてください
+    const API_URL = "https://script.google.com/macros/s/AKfycbxnGZH6oxQEeGjuJGpzzvbF0xILgJQ-wZvtV49zXANDGSujMEF6jiNI_z1PyZENd2Pc/exec";
+    
+    document.getElementById('work-date').valueAsDate = new Date();
+    let tempExercises = [];
+    let currentLogs = [];
+
+    function addExerciseToList() {
+        const name = document.getElementById('exercise-select').value;
+        const weight = document.getElementById('weight-input').value;
+        if(!weight) return;
+        tempExercises.push({ name, weight });
+        renderTempList();
+        document.getElementById('weight-input').value = '';
+    }
+
+    function renderTempList() {
+        const listEl = document.getElementById('temp-exercise-list');
+        listEl.innerHTML = tempExercises.map((ex, i) => `<li>${ex.name}: ${ex.weight}kg <span onclick="tempExercises.splice(${i},1);renderTempList();" style="color:red;cursor:pointer">×</span></li>`).join('');
+    }
+
+    async function saveDayLog() {
+        const user = document.getElementById('user-name').value;
+        const date = document.getElementById('work-date').value;
+        const memo = document.getElementById('day-memo').value;
+        const editRowIndex = document.getElementById('edit-index').value;
+
+        if (!user || tempExercises.length === 0) return alert("入力不足です");
+
+        const msgEl = document.getElementById('status-msg');
+        msgEl.style.display = 'block';
+
+        const data = { 
+            user, date, exercises: tempExercises, memo,
+            method: editRowIndex ? 'PUT' : 'POST',
+            rowIndex: editRowIndex ? parseInt(editRowIndex) : null
+        };
+
+        try {
+            await fetch(API_URL, { method: "POST", body: JSON.stringify(data) });
+            alert(editRowIndex ? "修正しました" : "保存しました");
+            resetForm();
+            displayHistory();
+        } catch (e) { alert("エラーが発生しました"); }
+        finally { msgEl.style.display = 'none'; }
+    }
+
+    function resetForm() {
+        document.getElementById('edit-index').value = "";
+        document.getElementById('form-title').innerText = "☁️ 記録を入力";
+        document.getElementById('save-btn').innerText = "記録を保存（同期）";
+        tempExercises = [];
+        renderTempList();
+        document.getElementById('day-memo').value = "";
+    }
+
+    // --- ここからが「3. 表示ロジックの共通化」に関連する修正部分 ---
+
+    // 1. 最初にデータを読み込む関数
     async function displayHistory() {
         const container = document.getElementById('history-summary');
         try {
             const response = await fetch(API_URL);
             currentLogs = await response.json();
-            const logsForDisplay = [...currentLogs].reverse();
+            renderHistoryList(currentLogs); // 全データを表示
+        } catch (e) { container.innerHTML = "読み込み失敗"; }
+    }
 
-            container.innerHTML = logsForDisplay.map((log) => {
-                // reverseしているので元のindexを探す
-                const originalIndex = currentLogs.findIndex(item => item.rowIndex === log.rowIndex);
-                return `
+    // 2. 検索窓に入力した時に実行される関数
+    function filterHistory() {
+        const query = document.getElementById('search-input').value.toLowerCase();
+        const filtered = currentLogs.filter(log => {
+            const dateStr = log.date.split('T')[0];
+            const userStr = log.user.toLowerCase();
+            return dateStr.includes(query) || userStr.includes(query);
+        });
+        renderHistoryList(filtered); // 絞り込んだ結果を表示
+    }
+
+    // 3. 画面にリストを描画する共通の関数
+    function renderHistoryList(logs) {
+        const container = document.getElementById('history-summary');
+        const logsForDisplay = [...logs].reverse();
+
+        if (logsForDisplay.length === 0) {
+            container.innerHTML = "該当する記録がありません。";
+            return;
+        }
+
+        container.innerHTML = logsForDisplay.map((log) => {
+            const originalIndex = currentLogs.findIndex(item => item.rowIndex === log.rowIndex);
+            return `
                 <div class="history-item" onclick="toggleDetail(${log.rowIndex})">
                     <strong>📅 ${log.date.split('T')[0]}</strong> - 👤 ${log.user}
                 </div>
@@ -128,8 +217,9 @@
                     </div>
                 </div>
             `}).join('');
-        } catch (e) { container.innerHTML = "読み込み失敗"; }
     }
+
+    // --- ここまで ---
 
     async function deleteLog(rowIndex) {
         if (!confirm("この日の記録を削除しますか？")) return;
@@ -164,5 +254,3 @@
 
     window.onload = displayHistory;
 </script>
-</body>
-</html>
